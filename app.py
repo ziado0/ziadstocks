@@ -24,35 +24,38 @@ st.set_page_config(
 # Path to models directory
 MODELS_DIR = "models"
 
-# Function to download models from Google Drive
+# Function to download models from GitHub Release
 @st.cache_resource
 def download_models():
-    """Download models from Google Drive if not already downloaded"""
+    """Download models from GitHub Release if not already downloaded"""
     if not os.path.exists(MODELS_DIR) or len(os.listdir(MODELS_DIR)) == 0:
-        with st.spinner("Downloading models from Google Drive... This may take a minute."):
+        with st.spinner("Downloading models... This may take a minute."):
             os.makedirs(MODELS_DIR, exist_ok=True)
             
-            # Your specific zip file ID
-            file_id = "1U3wxi7UFxFO1YmQPoMOMLOtimOKt67cc"
-            download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+            # Your specific GitHub release URL
+            github_release_url = "https://github.com/ziado0/ziadstocks/releases/download/v1/saudi_stock_models.zip"
             
             try:
                 # Download the zip file
-                r = requests.get(download_url) 
+                r = requests.get(github_release_url) 
+                if r.status_code != 200:
+                    st.error(f"Failed to download models: HTTP status code {r.status_code}")
+                    create_dummy_models()
+                    return True
+                
+                # Extract the zip file
                 z = zipfile.ZipFile(io.BytesIO(r.content))
                 z.extractall(MODELS_DIR)
                 st.success("Models downloaded successfully!")
             except Exception as e:
                 st.error(f"Error downloading models: {e}")
-                
-                # If download fails, create dummy models for demonstration
-                st.warning("Using dummy models for demonstration")
                 create_dummy_models()
     return True
 
 # Function to create dummy models for demonstration
 def create_dummy_models():
     """Create dummy models for demonstration if download fails"""
+    st.warning("Using trend-based predictions instead of LSTM models")
     # This is just a fallback in case the download fails
     symbols = ["2222.SR", "1010.SR", "1150.SR", "1180.SR", "2350.SR"]
     
