@@ -32,15 +32,9 @@ def download_models():
         with st.spinner("Downloading models from Google Drive... This may take a minute."):
             os.makedirs(MODELS_DIR, exist_ok=True)
             
-            # Instead of using gdown, we'll use a simpler approach
-            # You'll need to create a zip file of your models and make it publicly accessible
-            
-            # Replace this with a direct download link to your models zip file
-            # For example, you can use Google Drive's direct download link
-            # Format: https://drive.google.com/uc?export=download&id=YOUR_FILE_ID
-            
-            # For now, let's use a placeholder that you'll need to replace
-            download_url = "https://drive.google.com/uc?export=download&id=YOUR_ZIP_FILE_ID"
+            # Your specific zip file ID
+            file_id = "1U3wxi7UFxFO1YmQPoMOMLOtimOKt67cc"
+            download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
             
             try:
                 # Download the zip file
@@ -70,7 +64,6 @@ def create_dummy_models():
         with open(os.path.join(model_dir, "dummy_model.txt"), "w") as f:
             f.write(f"This is a dummy model for {symbol}")
 
-# Rest of the code remains the same as before
 # Function to get all available models
 def get_available_models():
     """Get all available trained models"""
@@ -80,10 +73,11 @@ def get_available_models():
     models = []
     for item in os.listdir(MODELS_DIR):
         if os.path.isdir(os.path.join(MODELS_DIR, item)):
-            # For dummy models, we'll just use the directory name
+            # For real models with LSTM
             if os.path.exists(os.path.join(MODELS_DIR, item, 'lstm_model.h5')):
                 symbol = item.replace('_', '.')
                 models.append(symbol)
+            # For dummy models
             elif os.path.exists(os.path.join(MODELS_DIR, item, 'dummy_model.txt')):
                 symbol = item.replace('_', '.')
                 models.append(symbol)
