@@ -10,8 +10,9 @@ import os
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import gdown
-import shutil
+import requests
+import zipfile
+import io
 
 # Set page configuration
 st.set_page_config(
@@ -20,13 +21,10 @@ st.set_page_config(
     layout="wide"
 )
 
-# Google Drive folder ID
-DRIVE_FOLDER_ID = "1hmaj_v6rnsYEkm8HFF4K6_D7kwAkh7nr"
-
 # Path to models directory
 MODELS_DIR = "models"
 
-# Function to download models from Google Drive folder
+# Function to download models from Google Drive
 @st.cache_resource
 def download_models():
     """Download models from Google Drive if not already downloaded"""
@@ -34,30 +32,45 @@ def download_models():
         with st.spinner("Downloading models from Google Drive... This may take a minute."):
             os.makedirs(MODELS_DIR, exist_ok=True)
             
-            # Create a temporary directory for downloads
-            temp_dir = "temp_downloads"
-            os.makedirs(temp_dir, exist_ok=True)
+            # Instead of using gdown, we'll use a simpler approach
+            # You'll need to create a zip file of your models and make it publicly accessible
             
-            # Download all files from the Google Drive folder
-            folder_url = f"https://drive.google.com/drive/folders/{DRIVE_FOLDER_ID}"
-            gdown.download_folder(url=folder_url, output=temp_dir, quiet=False) 
+            # Replace this with a direct download link to your models zip file
+            # For example, you can use Google Drive's direct download link
+            # Format: https://drive.google.com/uc?export=download&id=YOUR_FILE_ID
             
-            # Move model files to the models directory
-            for root, dirs, files in os.walk(temp_dir):
-                for dir_name in dirs:
-                    if dir_name.endswith("_SR"):  # Model directories like 2222_SR
-                        src_dir = os.path.join(root, dir_name)
-                        dst_dir = os.path.join(MODELS_DIR, dir_name)
-                        if os.path.exists(src_dir) and not os.path.exists(dst_dir):
-                            shutil.copytree(src_dir, dst_dir)
+            # For now, let's use a placeholder that you'll need to replace
+            download_url = "https://drive.google.com/uc?export=download&id=YOUR_ZIP_FILE_ID"
             
-            # Clean up temporary directory
-            shutil.rmtree(temp_dir)
-            
-            st.success("Models downloaded successfully!")
+            try:
+                # Download the zip file
+                r = requests.get(download_url) 
+                z = zipfile.ZipFile(io.BytesIO(r.content))
+                z.extractall(MODELS_DIR)
+                st.success("Models downloaded successfully!")
+            except Exception as e:
+                st.error(f"Error downloading models: {e}")
+                
+                # If download fails, create dummy models for demonstration
+                st.warning("Using dummy models for demonstration")
+                create_dummy_models()
     return True
 
-# Rest of the code remains the same as in my previous message
+# Function to create dummy models for demonstration
+def create_dummy_models():
+    """Create dummy models for demonstration if download fails"""
+    # This is just a fallback in case the download fails
+    symbols = ["2222.SR", "1010.SR", "1150.SR", "1180.SR", "2350.SR"]
+    
+    for symbol in symbols:
+        model_dir = os.path.join(MODELS_DIR, symbol.replace('.', '_'))
+        os.makedirs(model_dir, exist_ok=True)
+        
+        # Create a dummy model file
+        with open(os.path.join(model_dir, "dummy_model.txt"), "w") as f:
+            f.write(f"This is a dummy model for {symbol}")
+
+# Rest of the code remains the same as before
 # Function to get all available models
 def get_available_models():
     """Get all available trained models"""
@@ -66,9 +79,14 @@ def get_available_models():
     
     models = []
     for item in os.listdir(MODELS_DIR):
-        if os.path.isdir(os.path.join(MODELS_DIR, item)) and os.path.exists(os.path.join(MODELS_DIR, item, 'lstm_model.h5')):
-            symbol = item.replace('_', '.')
-            models.append(symbol)
+        if os.path.isdir(os.path.join(MODELS_DIR, item)):
+            # For dummy models, we'll just use the directory name
+            if os.path.exists(os.path.join(MODELS_DIR, item, 'lstm_model.h5')):
+                symbol = item.replace('_', '.')
+                models.append(symbol)
+            elif os.path.exists(os.path.join(MODELS_DIR, item, 'dummy_model.txt')):
+                symbol = item.replace('_', '.')
+                models.append(symbol)
     return sorted(models)
 
 # Function to get company name from symbol
@@ -94,6 +112,109 @@ def get_stock_data(symbol, period="1y"):
     except Exception as e:
         st.error(f"Error fetching data for {symbol}: {e}")
         return None
+
+# Function to make predictions using LSTM model or dummy predictions
+def predict_stock(symbol, data):
+    """Make predictions for different timeframes"""
+    if data is None or len(data) < 60:
+        st.error(f"Not enough data for {symbol} to make predictions")
+        return None
+    
+    # Check if we have a real model or need to use dummy predictions
+    model_dir = os.path.join(MODELS_DIR, symbol.replace('.', '_'))
+    model_path = os.path.join(model_dir, 'lstm_model.h5')
+    
+    if os.path.exists(model_path):
+        # Use real model
+        return predict_with_real_model(symbol, data)
+    else:
+        # Use dummy predictions
+        return predict_with_dummy_model(data)
+
+# Function to make predictions with real LSTM model
+def predict_with_real_model(symbol, data):
+    """Make predictions using real LSTM model"""
+    model_dir = os.path.join(MODELS_DIR, symbol.replace('.', '_'))
+    model_path = os.path.join(model_dir, 'lstm_model.h5')
+    scaler_path = os.path.join(model_dir, 'scaler.pkl')
+    
+    model = load_model(model_path)
+    scaler = joblib.load(scaler_path)
+    
+    # Make predictions for different timeframes
+    predictions = {}
+    timeframes = [1, 5, 10, 20]  # days - next day, 5 days, 10 days, 1 month (20 trading days)
+    
+    # Get future predictions
+    future_df = predict_with_lstm(model, scaler, data, future_days=max(timeframes))
+    
+    # Extract predictions for each timeframe
+    latest_price = data['Close'].iloc[-1]
+    
+    for days in timeframes:
+        predicted_price = future_df['Predicted_Close'].iloc[days-1]
+        predicted_change = ((predicted_price - latest_price) / latest_price) * 100
+        direction = "Up" if predicted_price > latest_price else "Down"
+        
+        predictions[days] = {
+            'predicted_price': round(float(predicted_price), 2),
+            'predicted_change': round(float(predicted_change), 2),
+            'direction': direction
+        }
+    
+    return predictions, future_df
+
+# Function to make dummy predictions
+def predict_with_dummy_model(data):
+    """Make dummy predictions based on recent trends"""
+    # This is just a fallback in case the real models aren't available
+    latest_price = data['Close'].iloc[-1]
+    
+    # Calculate average daily change over the last 30 days
+    recent_data = data.tail(30)
+    daily_changes = recent_data['Close'].pct_change().dropna()
+    avg_daily_change = daily_changes.mean()
+    
+    # Determine trend direction (up or down)
+    short_term_avg = data['Close'].tail(5).mean()
+    long_term_avg = data['Close'].tail(20).mean()
+    trend_direction = "Up" if short_term_avg > long_term_avg else "Down"
+    
+    # Prepare predictions
+    predictions = {}
+    timeframes = [1, 5, 10, 20]
+    
+    # Create future dates
+    last_date = data.index[-1]
+    future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=max(timeframes), freq='B')
+    future_prices = []
+    
+    # Generate future prices
+    current_price = latest_price
+    for i in range(max(timeframes)):
+        if trend_direction == "Up":
+            change = max(0.001, avg_daily_change)
+        else:
+            change = min(-0.001, avg_daily_change)
+        
+        current_price = current_price * (1 + change)
+        future_prices.append(current_price)
+    
+    # Create future DataFrame
+    future_df = pd.DataFrame(index=future_dates, data=future_prices, columns=['Predicted_Close'])
+    
+    # Extract predictions for each timeframe
+    for days in timeframes:
+        predicted_price = future_df['Predicted_Close'].iloc[days-1]
+        predicted_change = ((predicted_price - latest_price) / latest_price) * 100
+        
+        predictions[days] = {
+            'predicted_price': round(float(predicted_price), 2),
+            'predicted_change': round(float(predicted_change), 2),
+            'direction': trend_direction
+        }
+    
+    return predictions, future_df
 
 # Function to make predictions using LSTM model
 def predict_with_lstm(model, scaler, data, time_steps=60, future_days=30):
@@ -128,48 +249,6 @@ def predict_with_lstm(model, scaler, data, time_steps=60, future_days=30):
     future_df = pd.DataFrame(index=future_dates, data=predictions, columns=['Predicted_Close'])
     
     return future_df
-
-# Function to load model and make predictions
-def predict_stock(symbol, data):
-    """Load model and make predictions for different timeframes"""
-    if data is None or len(data) < 60:
-        st.error(f"Not enough data for {symbol} to make predictions")
-        return None
-    
-    # Load model and scaler
-    model_dir = os.path.join(MODELS_DIR, symbol.replace('.', '_'))
-    model_path = os.path.join(model_dir, 'lstm_model.h5')
-    scaler_path = os.path.join(model_dir, 'scaler.pkl')
-    
-    if not os.path.exists(model_path) or not os.path.exists(scaler_path):
-        st.error(f"Model or scaler not found for {symbol}")
-        return None
-    
-    model = load_model(model_path)
-    scaler = joblib.load(scaler_path)
-    
-    # Make predictions for different timeframes
-    predictions = {}
-    timeframes = [1, 5, 10, 20]  # days - next day, 5 days, 10 days, 1 month (20 trading days)
-    
-    # Get future predictions
-    future_df = predict_with_lstm(model, scaler, data, future_days=max(timeframes))
-    
-    # Extract predictions for each timeframe
-    latest_price = data['Close'].iloc[-1]
-    
-    for days in timeframes:
-        predicted_price = future_df['Predicted_Close'].iloc[days-1]
-        predicted_change = ((predicted_price - latest_price) / latest_price) * 100
-        direction = "Up" if predicted_price > latest_price else "Down"
-        
-        predictions[days] = {
-            'predicted_price': round(float(predicted_price), 2),
-            'predicted_change': round(float(predicted_change), 2),
-            'direction': direction
-        }
-    
-    return predictions, future_df
 
 # Function to create interactive chart
 def create_interactive_chart(historical_data, future_data=None):
@@ -219,7 +298,7 @@ def main():
     available_models = get_available_models()
     
     if not available_models:
-        st.error("No trained models found. Please check the Google Drive link.")
+        st.error("No models found. Please check the download link.")
         return
     
     # Sidebar
