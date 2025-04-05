@@ -4,8 +4,6 @@ import numpy as np
 import datetime
 import yfinance as yf
 from sklearn.preprocessing import MinMaxScaler
-from tensorflow.keras.models import load_model
-import joblib
 import os
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
@@ -13,6 +11,9 @@ from plotly.subplots import make_subplots
 import requests
 import zipfile
 import io
+import tempfile
+from tensorflow.keras.models import load_model
+import joblib
 
 # Set page configuration
 st.set_page_config(
@@ -24,20 +25,20 @@ st.set_page_config(
 # Path to models directory
 MODELS_DIR = "models"
 
-# Function to download models from GitHub Release
+# Function to download models from Hugging Face
 @st.cache_resource
 def download_models():
-    """Download models from GitHub Release if not already downloaded"""
+    """Download models from Hugging Face if not already downloaded"""
     if not os.path.exists(MODELS_DIR) or len(os.listdir(MODELS_DIR)) == 0:
         with st.spinner("Downloading models... This may take a minute."):
             os.makedirs(MODELS_DIR, exist_ok=True)
             
-            # Your specific GitHub release URL
-            github_release_url = "https://github.com/ziado0/ziadstocks/releases/download/v1/saudi_stock_models.zip"
+            # Your specific Hugging Face URL
+            huggingface_url = "https://huggingface.co/datasets/ziado0/ziadstocks/resolve/main/saudi_stock_models.zip"
             
             try:
                 # Download the zip file
-                r = requests.get(github_release_url) 
+                r = requests.get(huggingface_url) 
                 if r.status_code != 200:
                     st.error(f"Failed to download models: HTTP status code {r.status_code}")
                     create_dummy_models()
@@ -135,31 +136,35 @@ def predict_with_real_model(symbol, data):
     model_path = os.path.join(model_dir, 'lstm_model.h5')
     scaler_path = os.path.join(model_dir, 'scaler.pkl')
     
-    model = load_model(model_path)
-    scaler = joblib.load(scaler_path)
-    
-    # Make predictions for different timeframes
-    predictions = {}
-    timeframes = [1, 5, 10, 20]  # days - next day, 5 days, 10 days, 1 month (20 trading days)
-    
-    # Get future predictions
-    future_df = predict_with_lstm(model, scaler, data, future_days=max(timeframes))
-    
-    # Extract predictions for each timeframe
-    latest_price = data['Close'].iloc[-1]
-    
-    for days in timeframes:
-        predicted_price = future_df['Predicted_Close'].iloc[days-1]
-        predicted_change = ((predicted_price - latest_price) / latest_price) * 100
-        direction = "Up" if predicted_price > latest_price else "Down"
+    try:
+        model = load_model(model_path)
+        scaler = joblib.load(scaler_path)
         
-        predictions[days] = {
-            'predicted_price': round(float(predicted_price), 2),
-            'predicted_change': round(float(predicted_change), 2),
-            'direction': direction
-        }
-    
-    return predictions, future_df
+        # Make predictions for different timeframes
+        predictions = {}
+        timeframes = [1, 5, 10, 20]  # days - next day, 5 days, 10 days, 1 month (20 trading days)
+        
+        # Get future predictions
+        future_df = predict_with_lstm(model, scaler, data, future_days=max(timeframes))
+        
+        # Extract predictions for each timeframe
+        latest_price = data['Close'].iloc[-1]
+        
+        for days in timeframes:
+            predicted_price = future_df['Predicted_Close'].iloc[days-1]
+            predicted_change = ((predicted_price - latest_price) / latest_price) * 100
+            direction = "Up" if predicted_price > latest_price else "Down"
+            
+            predictions[days] = {
+                'predicted_price': round(float(predicted_price), 2),
+                'predicted_change': round(float(predicted_change), 2),
+                'direction': direction
+            }
+        
+        return predictions, future_df
+    except Exception as e:
+        st.error(f"Error using LSTM model: {e}")
+        return predict_with_dummy_model(data)
 
 # Function to make dummy predictions
 def predict_with_dummy_model(data):
